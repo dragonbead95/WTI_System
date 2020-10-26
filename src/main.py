@@ -1,7 +1,7 @@
 """
 title : Wireless terminal identification system
 author : 김용환 (yh.kim951107@gmail.com)
-date : 2020-10-22
+date : 2020-10-26
 detail : 
 todo :
 

@@ -103,25 +103,14 @@ def get_proReq_train_data(fm_name_list):
 
 """학습 식별 모델을 생성한다.
 학습 모델 타입은 랜덤 포레스트이다.
-
-params
-probe-request
-data : [[sequence number delta, length], ..., [...]]
-target : [label, ..., ]
-
-becon-frame
-data : [[clock skew, RSS, channel, duration], ... , [...]]
-target : [[ssid,mac address], ..., [...]]
 """
-
-def random_forest_model(data, target):
+def random_forest_model(x_train, target):
 
     if os.path.isfile(filePath.device_model_path): # 기존 모델이 존재하면 추가 학습을 수행함
-        print("device_model is exist")
         rf = load_model("device_model.pkl")
     else: # 디바이스 모델이 존재하지 않으면 새로 생성
         rf = RandomForestClassifier(n_estimators=100,random_state=0) 
-    rf.fit(data,target)
+    rf.fit(x_train,target)
 
     return rf
     

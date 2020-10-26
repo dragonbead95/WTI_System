@@ -21,8 +21,6 @@ from scipy import stats
 res
     model
     packet
-        -beacon
-        -beacon_test
         -probe
         -probe_test
     pcapng
@@ -30,7 +28,6 @@ res
         -learn
         -test
     scan
-        -beacon
         -probe
 """
 def init_directory():
@@ -47,6 +44,7 @@ def init_directory():
     make_Directory(filePath.scan_probe_path)        #probe
     make_Directory(filePath.packet_test)            #packet_test
     make_Directory(filePath.packet_test_probe_path) #probe
+    make_Directory(filePath.cmd_result_path)        #cmd_result
 
     
  

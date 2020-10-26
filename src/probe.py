@@ -10,6 +10,105 @@ import numpy as np
 import csv
 import file
 import machine_learn
+from sklearn.ensemble import RandomForestClassifier
+
+def train_model(data):
+    x_train = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "length"]].values.tolist()
+
+    target = data["label"].values.tolist()
+
+    if os.path.isfile(filePath.device_model_path): # 기존 모델이 존재하면 추가 학습을 수행함
+        rf = machine_learn.load_model("device_model.pkl")
+    else: # 디바이스 모델이 존재하지 않으면 새로 생성
+        rf = RandomForestClassifier(n_estimators=100,random_state=0) 
+    
+    rf.fit(x_train,target)
+
+    machine_learn.save_model(rf,"device_model.pkl") # 식별모델 파일 저장
+
+    
+
+        
+
+
+"""feature 가져오기
+기계학습 모델에 넣기 위해 저장된 feature 들을 가져오는 기능
+"""
+def get_features():
+    # 필요한 것 : 기기별로 저장된 featured.csv 경로
+    os.system("sudo find {} -name featured.csv > \
+                {}".format(filePath.probe_path, filePath.feature_path_list_path))
+
+    # step1 featured.csv 경로가 저장된 txt파일을 참조하여 경로를 추출함
+    with open(filePath.feature_path_list_path,"r") as f:
+        feature_paths = f.read()
+        feature_paths = feature_paths.split("\n") # 줄단위로 구분한 경로를 리스트화
+        feature_paths.remove("") # '' 요소 제거
+        
+    # step2 featured.csv를 참조하여 feature value 추출
+    datas = []
+    for path in feature_paths:
+        data = pd.read_csv(path)
+        datas.append(
+                data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "length","label"]]
+                )
+    #step3 feature 데이터 합치기
+    return pd.concat(datas) # type:dataframe
+        
+    
+        
+    
+
+"""ap식별
+조건 : 식별 모델이 존재하면 모델에 넣어 식별 수행
+"""
+def identify_ap(data):
+    
+    # 식별 수행
+    device_model = machine_learn.load_model("device_model.pkl")
+    x_test = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "length"]].values.tolist()
+
+    y_tests = data["label"]
+
+    predict_dev = device_model.predict(x_test) # ap 기기 식별 예측
+    proba_dev = device_model.predict_proba(x_test)# 식별 예측 확률
+        
+    for pred, proba, y_test in zip(predict_dev,proba_dev,y_tests):
+        print("pred : {}, proba : {}, real : {}".format(pred,max(proba),y_test))
+
+
+"""probe-request 가공
+probe-request를 전처리 및 학습 모델 생성
+"""
+def proReq_process():
+
+    # step1 단말 분류
+    data = prepro_tag_length(filePath.learn_csv_probe_path) # tag length 필드 전처리
+
+    data = make_nullProReq(data)                            # null probe request 생성, length 필드 생성
+
+    dfs = separate_probe(data)                              # probe request를 단말별로 분류
+
+    file.make_Directory(filePath.probe_path)                      # probe 디렉토리 생성
+
+    dev_path ,devs = save_separated_probe(dfs,filePath.probe_path)# 분류된 단말들을 csv 파일 형태로 each 저장
+
+    for path, dev in zip(dev_path, devs): # path : ex) probe/dev1/
+        # step2 단말 시퀀스 번호 전처리
+        time_path = path+"time_separated/"
+        file.make_Directory(time_path) # time_separated 디렉토리 생성
+        time_names = separate_time_probe(path,dev, time_path)
+
+        # step3 feature 추출 및 저장
+        featured_path = path+"featured/" # featured 디렉토리 생성
+        file.make_Directory(featured_path)
+        write_feature(time_names,dev,featured_path)
 
 """단말에 대한 feature를 추출하고 저장한다
     feature 추출
@@ -74,9 +173,11 @@ def write_feature(time_names,dev,featured_path):
             labels.append(dev)
     else:         # model 존재할때
         for i in range(len(new_data)):
-            label = model.predict(new_data.iloc[i]) # 기존에 식별된 단말인지 식별
-            label_probability = model.predict_proba(new_data.iloc[i]) # 예측 확률 판단
-                        
+            x_data = np.reshape(new_data.iloc[i].values.tolist(),(1,-1)) # 1d -> 2d
+            
+            label = model.predict(x_data)[0] # 기존에 식별된 단말인지 식별
+            label_probability = max(model.predict_proba(x_data)[0]) # 예측 확률 판단
+
             if label_probability>=0.6:
                 labels.append(label)
         # 해당 부분 보완 필요 => json 파일을 통해서 추가하는 방법
@@ -399,4 +500,4 @@ def linear_regression(dt, ds):
     return pattern, np.mean(pattern)
 
 if __name__ == "__main__":
-    pass
+    get_features()

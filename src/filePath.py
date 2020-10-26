@@ -39,3 +39,6 @@ packet_test = res_path + "/packet_test/"
 packet_test_probe_path = packet_test + "/probe/"
 packet_test_probe_csv_path = packet_test_probe_path + "/probe_test.csv"
 
+cmd_result_path = res_path + "/cmd_result/"
+feature_path_list_path = cmd_result_path + "feature_path_list.txt"
+

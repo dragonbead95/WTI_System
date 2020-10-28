@@ -11,7 +11,41 @@ import csv
 import file
 import machine_learn
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
+from sklearn.preprocessing import MinMaxScaler
 
+"""label 저장
+생성한 label을 csv파일에 저장한다.
+dev : dev1, dev2, ...
+"""
+def save_label(dev):
+    num = dev.split("dev")
+    num.remove('')
+    num = num[0] # label number
+    
+    with open(filePath.label_path,"a") as f:
+        f.write(num+" ")
+
+"""새로운 label 생성
+csv파일을 참조하여 제일 큰 숫자에 +1을 하여 새로운 label 생성하고,
++1한 숫자는 다시 csv파일에 저장한다
+
+return new_label (type : str)
+"""
+def create_label():
+    with open(filePath.label_path,"r") as f:
+        line = f.readline() # ['1', ' ', '2', ' ']
+        line = line.split(" ") # ['1','2', ..., '']
+        line.remove('') # ['1','2']
+        new_label = str(max(list(map(int,line)))+1)
+    
+    with open(filePath.label_path,"a") as f:
+        f.write(new_label + " ")
+    return new_label
+
+"""식별모델 학습
+"""
 def train_model(data):
     x_train = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
                     "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
@@ -78,10 +112,14 @@ def identify_ap(data):
 
     predict_dev = device_model.predict(x_test) # ap 기기 식별 예측
     proba_dev = device_model.predict_proba(x_test)# 식별 예측 확률
-        
+    
     for pred, proba, y_test in zip(predict_dev,proba_dev,y_tests):
-        print("pred : {}, proba : {}, real : {}".format(pred,max(proba),y_test))
-
+        if max(proba) > 0.6:
+            print("pred : {}, proba : {}, real : {} is authorized".format(pred,max(proba),y_test))
+        else:
+            print("pred : {}, proba : {}, real : {} is unauthorized".format(pred,max(proba),y_test))
+    print(pd.crosstab(y_tests,predict_dev))
+    print(classification_report(y_tests,predict_dev))
 
 """probe-request 가공
 probe-request를 전처리 및 학습 모델 생성
@@ -104,6 +142,8 @@ def proReq_process():
         time_path = path+"time_separated/"
         file.make_Directory(time_path) # time_separated 디렉토리 생성
         time_names = separate_time_probe(path,dev, time_path)
+
+        # timediffderence field 추가후 저장
 
         # step3 feature 추출 및 저장
         featured_path = path+"featured/" # featured 디렉토리 생성
@@ -139,22 +179,23 @@ def write_feature(time_names,dev,featured_path):
     for filename in time_names:
         # step3-1 dt, ds 추출
         data = pd.read_csv(filename)
-        dt.append(data["frame.time_relative"])
-        ds.append(data["wlan.seq"])
+        dt.append(data["time_difference"])
+        ds.append(data["seq_difference"])
 
         # step3-2 feature 2~7 추출을 위한 호출    
         mp.append(int(data["wlan.ht.ampduparam.mpdudensity"][0],16))
         cap.append(int(data["wlan.ht.capabilities"][0],16))
         cap_rx.append(int(data["wlan.ht.capabilities.rxstbc"][0],16))
-        cap_tx.append(data["wlan.ht.capabilities.txstbc"][0])
+        cap_tx.append(int(str(data["wlan.ht.capabilities.txstbc"][0]),16))
         tag_leng.append(data["wlan.tag.length"][0])
         leng.append(data["length"][0])
             
             
-
     # step3-3 delta seq no 추출
+    #delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
     delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
 
+    
     # step3-4 학습 dataframe 생성
     new_data = pd.DataFrame({"delta_seq_no":delta_seq_nos,
                         "wlan.ht.ampduparam.mpdudensity":mp,
@@ -171,6 +212,8 @@ def write_feature(time_names,dev,featured_path):
     if not model: # model이 존재하지 않을때
         for idx in range(len(new_data)):
             labels.append(dev)
+        save_label(dev) # 생성한 레이블 번호를 파일에 저장
+        
     else:         # model 존재할때
         for i in range(len(new_data)):
             x_data = np.reshape(new_data.iloc[i].values.tolist(),(1,-1)) # 1d -> 2d
@@ -180,8 +223,11 @@ def write_feature(time_names,dev,featured_path):
 
             if label_probability>=0.6:
                 labels.append(label)
-        # 해당 부분 보완 필요 => json 파일을 통해서 추가하는 방법
-        
+            else: # 새로운 번호가 필요
+                new_label = create_label()
+                labels.append("dev{}".format(new_label))
+                save_label(new_label)
+
     # step3-6 label 필드 추가
     new_data["label"] = labels
 
@@ -307,7 +353,7 @@ def prepro_tag_length(filename):
         rdr = csv.reader(f)
         next(rdr)
         for line in rdr:
-            sum_tag_length = sum(list(map(int, line[8:])))  # tag length들의 합을 계산하여 저장
+            sum_tag_length = sum(list(map(lambda x: x if type(x)==int else int(x,16),line[8:])))  # tag length들의 합을 계산하여 저장
             dummy_line = line[:8]  # column 0~7 필드를 임시 저장
             dummy_line.append(sum_tag_length)  # 임시저장 리스트에 tag_length들의 합계 추가
             dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
@@ -395,70 +441,17 @@ def separate_time_probe(path, dev, time_path):
         ret = data[data["frame.time_relative"] >= (i*600)][data["frame.time_relative"]<600 * (i+1)]
         if len(ret) < 14:
             continue
+
+        ret["time_difference"] = ret["frame.time_relative"]-ret.iloc[0]["frame.time_relative"] # time_difference field 추가
+        ret["seq_difference"] = ret["wlan.seq"] - ret.iloc[0]["wlan.seq"] # seq_difference field 추가
+
+
         filename = time_path + dev + "_" + str(i//6) + "_" + str((i%6)*10) + ".csv"
         ret.to_csv(filename, mode="w",index=False)
 
         time_separated_names.append(filename)
 
     return time_separated_names
-
-
-"""
-params
-하나의 맥주소에 대해서 10분간격으로 분류된 csv파일을 참조하여 각각의 파일의
-수신시관과 시퀀스넘버를 리스트 형태로 저장한다.
-
-dev : mac주소
-csvname : csv 파일 경로를 찾기 위한 문자열 경로
-
-return
-dt : 수신time 리스트
-ds : 시퀀스 넘버 리스트
-
-"""
-def process_delta(dev,csvname="probe"):
-    dev_name = []
-    ap_name = []
-    data_list = []
-    data_size = []
-
-    deltatime=[]
-    deltaseq = []
-    lost = []
-
-    for i in range(144):
-        dev_bssid = dev.replace(":","_")
-
-        ospath = filePath.packet_path + "/" + csvname + "/" + dev_bssid
-            
-        filename = ospath + "/" + dev_bssid + "_" + str(i//6) + "_" + str((i%6)*10) + ".csv"
-
-        try:
-            df = pd.read_csv(filename)
-            dev_name.append(filename)
-            data_list.append(df)
-            data_size.append(len(df))
-
-            
-            deltatime.append(df["timedifference"]) #해당 csv파일의 timedifference를 가져와 저장한다.
-            deltaseq.append(df["sequence no"]) #해당 csv파일의 sequence no를 가져와 저장한다.
-        except:
-            lost.append([dev,i])
-            continue
-        
-    
-    dt = []
-    ds = []
-    for t,s in zip(deltatime, deltaseq):
-        temp1 = []
-        temp2 = []
-        for i in range(len(t)):
-            temp1.append(t[i]-t[0])
-            temp2.append(s[i]-s[0])
-        dt.append(temp1)
-        ds.append(temp2)
-
-    return dt, ds
 
 def linear_regression(dt, ds):
     tf.disable_v2_behavior()
@@ -483,11 +476,13 @@ def linear_regression(dt, ds):
     for i in range(len(dt)):
         sess.run(tf.global_variables_initializer())
         tempcost = []
+        
         for step in range(501):
             _, cost_val, W_val, b_val = sess.run([train, cost, W, b],feed_dict={X:dt[i], Y:ds[i]})
             tempcost.append(W_val)
-
+    
         if math.isnan(W_val[0]):
+            print("raise nan")
             continue
         print(step, W_val, cost_val)
         pattern.append(W_val[0])
@@ -499,5 +494,7 @@ def linear_regression(dt, ds):
     
     return pattern, np.mean(pattern)
 
+
+
 if __name__ == "__main__":
-    get_features()
+    save_label("dev10")

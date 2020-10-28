@@ -24,8 +24,6 @@ from sklearn.model_selection import train_test_split
 from sklearn import metrics
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
-from sklearn.cluster import DBSCAN
 
 """clock skew 기울기 계산
 

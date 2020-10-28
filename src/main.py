@@ -27,7 +27,7 @@ def main():
                         +"2: collect the packet\n"
                         +"3: filter the pcapng file\n"
                         +"4: training the ap/device\n"
-                        +"5: delete the ap/device model\n"
+                        +"5: delete the device model / labels\n"
                         +"6: exit\n")
 
         if cmd_num=="1": # 디렉토리를 초기화한다.
@@ -56,9 +56,9 @@ def main():
                 probe.identify_ap(data) # ap 식별
             probe.train_model(data)
             
-        elif cmd_num=="5": # 식별 모델 전부 제거
+        elif cmd_num=="5": # 식별 모델, labels 전부 제거
             machine_learn.delete_model()
-
+            os.system("sudo rm -rf {}".format(filePath.label_path))
         elif cmd_num=="6": # 프로그램 종료
             return;
         else:

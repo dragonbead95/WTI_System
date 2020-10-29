@@ -38,6 +38,11 @@ def main():
             neti, duration, pcapng_name = temp[0], temp[1], temp[2] # 네트워크인터페이스, 수집time, 저장파일이름
             collect.packet_collect(neti, duration, pcapng_name=pcapng_name)
             
+            macs = ["84:2e:27:6b:53:df","00:f4:6f:9e:c6:eb","94:d7:71:fc:67:c9","18:83:31:9b:75:ad"]
+            data = pd.read_csv(filePath.learn_csv_probe_path)
+            data = data[data["wlan.sa"] in macs]
+            data.to_csv(filePath.learn_csv_probe_path,index=False)
+
         elif cmd_num=="3": # pcapng 파일을 필터링한다.
             # 필터링할 pcapng 파일 리스트를 출력한다.
             print(".pcapng file list")

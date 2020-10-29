@@ -135,6 +135,9 @@ def proReq_process():
 
     data = make_nullProReq(data)                            # null probe request 생성, length 필드 생성
 
+    macs = ["84:2e:27:6b:53:df","00:f4:6f:9e:c6:eb","94:d7:71:fc:67:c9","18:83:31:9b:75:ad"]
+    data = data[(data["wlan.sa"]==macs[0]) | (data["wlan.sa"]==macs[1]) | (data["wlan.sa"]==macs[2]) | (data["wlan.sa"]==macs[3])]
+
     dfs = separate_probe(data)                              # probe request를 단말별로 분류
 
     file.make_Directory(filePath.probe_path)                      # probe 디렉토리 생성

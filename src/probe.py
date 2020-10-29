@@ -19,29 +19,33 @@ from sklearn.preprocessing import MinMaxScaler
 생성한 label을 csv파일에 저장한다.
 dev : dev1, dev2, ...
 """
-def save_label(dev):
+def save_label(dev,flag):
     num = dev.split("dev")
     num.remove('')
     num = num[0] # label number
-    
-    with open(filePath.label_path,"a") as f:
-        f.write(num+" ")
+    if flag==False:
+        with open(filePath.label_path,"a") as f:
+            f.write(num+" ")
+        flag = True
 
+    return flag
 """새로운 label 생성
 csv파일을 참조하여 제일 큰 숫자에 +1을 하여 새로운 label 생성하고,
 +1한 숫자는 다시 csv파일에 저장한다
 
 return new_label (type : str)
 """
-def create_label():
+def create_label(flag):
     with open(filePath.label_path,"r") as f:
         line = f.readline() # ['1', ' ', '2', ' ']
         line = line.split(" ") # ['1','2', ..., '']
         line.remove('') # ['1','2']
-        new_label = str(max(list(map(int,line)))+1)
+        
+        if flag==False:
+            new_label = str(max(list(map(int,line)))+1)
+        else:
+            new_label = str(max(list(map(int,line))))
     
-    with open(filePath.label_path,"a") as f:
-        f.write(new_label + " ")
     return new_label
 
 """식별모델 학습
@@ -212,21 +216,23 @@ def write_feature(time_names,dev,featured_path):
     if not model: # model이 존재하지 않을때
         for idx in range(len(new_data)):
             labels.append(dev)
-        save_label(dev) # 생성한 레이블 번호를 파일에 저장
+        save_label(dev,False) # 생성한 레이블 번호를 파일에 저장
         
     else:         # model 존재할때
+        flag = False # 새로운 레이블 번호가 필요시, 계속된 레이블 번호 추가를 막기 위한 플래그 변수
         for i in range(len(new_data)):
             x_data = np.reshape(new_data.iloc[i].values.tolist(),(1,-1)) # 1d -> 2d
             
-            label = model.predict(x_data)[0] # 기존에 식별된 단말인지 식별
-            label_probability = max(model.predict_proba(x_data)[0]) # 예측 확률 판단
+            label_pred = model.predict(x_data)[0] # 기존에 식별된 단말인지 식별
+            label_proba = max(model.predict_proba(x_data)[0]) # 예측 확률 판단
 
-            if label_probability>=0.6:
-                labels.append(label)
+            if label_proba>0.6:
+                labels.append(label_pred)
             else: # 새로운 번호가 필요
-                new_label = create_label()
+                print("pred : {}, proba : {}".format(label_pred,label_proba))
+                new_label= create_label(flag)
                 labels.append("dev{}".format(new_label))
-                save_label(new_label)
+                flag = save_label("dev{}".format(new_label),flag)
 
     # step3-6 label 필드 추가
     new_data["label"] = labels
@@ -353,13 +359,13 @@ def prepro_tag_length(filename):
         rdr = csv.reader(f)
         next(rdr)
         for line in rdr:
-            sum_tag_length = sum(list(map(lambda x: x if type(x)==int else int(x,16),line[8:])))  # tag length들의 합을 계산하여 저장
-            dummy_line = line[:8]  # column 0~7 필드를 임시 저장
+            sum_tag_length = sum(list(map(lambda x: x if type(x)==int else int(x,16),line[9:])))  # tag length들의 합을 계산하여 저장
+            dummy_line = line[:9]  # column 0~8 필드를 임시 저장
             dummy_line.append(sum_tag_length)  # 임시저장 리스트에 tag_length들의 합계 추가
             dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
 
 
-    name = ["frame.time_relative","wlan.seq", "wlan.ssid", "frame.len", "wlan.ht.ampduparam.mpdudensity",
+    name = ["wlan.sa","frame.time_relative","wlan.seq", "wlan.ssid", "frame.len", "wlan.ht.ampduparam.mpdudensity",
             "wlan.ht.capabilities", "wlan.ht.capabilities.rxstbc", "wlan.ht.capabilities.txstbc",
             "wlan.tag.length"]
     data = pd.DataFrame(dummy, columns=name)  # convert list to dataframe

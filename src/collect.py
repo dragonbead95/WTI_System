@@ -43,6 +43,7 @@ def probe_filter(pcapng_name, filename):
                     + pcapng_name
                     + " -Y \"wlan.fc.type_subtype==0x0004\""
                     + " -T fields"
+                    + " -e wlan.sa"
                     + " -e frame.time_relative"
                     + " -e wlan.seq"
                     + " -e wlan.ssid"

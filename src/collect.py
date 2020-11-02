@@ -52,7 +52,6 @@ def probe_filter(pcapng_name, filename):
                     + " -e wlan.ht.capabilities"
                     + " -e wlan.ht.capabilities.rxstbc"
                     + " -e wlan.ht.capabilities.txstbc"
-                    + " -e wlan.tag.length"
                     + " -E separator=, -E quote=n -E header=y > "
                     + filename)
 

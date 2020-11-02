@@ -1,6 +1,4 @@
-/home/user/Desktop/git/src/../res//packet//probe/dev5/featured/featured.csv
 /home/user/Desktop/git/src/../res//packet//probe/dev4/featured/featured.csv
 /home/user/Desktop/git/src/../res//packet//probe/dev2/featured/featured.csv
 /home/user/Desktop/git/src/../res//packet//probe/dev1/featured/featured.csv
-/home/user/Desktop/git/src/../res//packet//probe/dev6/featured/featured.csv
 /home/user/Desktop/git/src/../res//packet//probe/dev3/featured/featured.csv

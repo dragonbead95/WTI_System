@@ -52,7 +52,7 @@ def create_label(flag):
 """
 def train_model(data):
     x_train = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
-                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc",
                     "length"]].values.tolist()
 
     target = data["label"].values.tolist()
@@ -91,7 +91,7 @@ def get_features():
         data = pd.read_csv(path)
         datas.append(
                 data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
-                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc",
                     "length","label"]]
                 )
     #step3 feature 데이터 합치기
@@ -109,7 +109,7 @@ def identify_ap(data):
     # 식별 수행
     device_model = machine_learn.load_model("device_model.pkl")
     x_test = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
-                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc","wlan.tag.length",
+                    "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc",
                     "length"]].values.tolist()
 
     y_tests = data["label"]
@@ -122,6 +122,7 @@ def identify_ap(data):
             print("pred : {}, proba : {}, real : {} is authorized".format(pred,max(proba),y_test))
         else:
             print("pred : {}, proba : {}, real : {} is unauthorized".format(pred,max(proba),y_test))
+            
     print(pd.crosstab(y_tests,predict_dev))
     print(classification_report(y_tests,predict_dev))
 
@@ -131,7 +132,7 @@ probe-request를 전처리 및 학습 모델 생성
 def proReq_process():
 
     # step1 단말 분류
-    data = prepro_tag_length(filePath.learn_csv_probe_path) # tag length 필드 전처리
+    data = read_probe(filePath.learn_csv_probe_path) # tag length 필드 전처리
 
     data = make_nullProReq(data)                            # null probe request 생성, length 필드 생성
 
@@ -181,7 +182,6 @@ def write_feature(time_names,dev,featured_path):
     cap = []
     cap_rx = []
     cap_tx = []
-    tag_leng = []
     leng = []
     for filename in time_names:
         # step3-1 dt, ds 추출
@@ -194,13 +194,12 @@ def write_feature(time_names,dev,featured_path):
         cap.append(int(data["wlan.ht.capabilities"][0],16))
         cap_rx.append(int(data["wlan.ht.capabilities.rxstbc"][0],16))
         cap_tx.append(int(str(data["wlan.ht.capabilities.txstbc"][0]),16))
-        tag_leng.append(data["wlan.tag.length"][0])
         leng.append(data["length"][0])
             
             
     # step3-3 delta seq no 추출
     #delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
-    delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
+    delta_seq_nos = linear_regression(dt,ds)
 
     
     # step3-4 학습 dataframe 생성
@@ -209,17 +208,20 @@ def write_feature(time_names,dev,featured_path):
                         "wlan.ht.capabilities":cap,
                         "wlan.ht.capabilities.rxstbc":cap_rx,
                         "wlan.ht.capabilities.txstbc":cap_tx,
-                        "wlan.tag.length":tag_leng,
                         "length":leng
                         })
 
-    # step3-5 label 생성
+    # step3-5 delta_seq_no가 공백이 아닌 데이터만 남긴다.
+    new_data = new_data[new_data["delta_seq_no"]!=" "]
+
+    # step3-6 label 생성
     labels = []
     model = machine_learn.load_model("device_model.pkl") 
     if not model: # model이 존재하지 않을때
-        for idx in range(len(new_data)):
-            labels.append(dev)
-        save_label(dev,False) # 생성한 레이블 번호를 파일에 저장
+        if len(new_data)>=1: # new_data 데이터프레임에 feature가 존재할때
+            for idx in range(len(new_data)):
+                labels.append(dev)
+            save_label(dev,False) # 생성한 레이블 번호를 파일에 저장
         
     else:         # model 존재할때
         flag = False # 새로운 레이블 번호가 필요시, 계속된 레이블 번호 추가를 막기 위한 플래그 변수
@@ -294,7 +296,6 @@ def separate_probe(data):
         data["wlan.ht.capabilities"],
         data["wlan.ht.capabilities.rxstbc"],
         data["wlan.ht.capabilities.txstbc"],
-        data["wlan.tag.length"],
         data["length"]
     ])
 
@@ -309,7 +310,6 @@ def separate_probe(data):
         "wlan.ht.capabilities": "wlan.ht.capabilities",
         "wlan.ht.capabilities.rxstbc": "wlan.ht.capabilities.rxstbc",
         "wlan.ht.capabilities.txstbc": "wlan.ht.capabilities.txstbc",
-        "wlan.tag.length": "wlan.tag.length",
         "length": "length"
     }
 
@@ -320,8 +320,7 @@ def separate_probe(data):
                         (data[filter_obj["wlan.ht.capabilities"]] == item[1]) &
                         (data[filter_obj["wlan.ht.capabilities.rxstbc"]] == item[2]) &
                         (data[filter_obj["wlan.ht.capabilities.txstbc"]] == item[3]) &
-                        (data[filter_obj["wlan.tag.length"]] == item[4]) &
-                        (data[filter_obj["length"]] == item[5])])
+                        (data[filter_obj["length"]] == item[4])])
 
     return dfs
 
@@ -355,47 +354,26 @@ frame.time_relative,wlan.seq,wlan.ssid,frame.len,wlan.ht.ampduparam.mpdudensity,
 
 return data (type:dataframe,변경된 형식과 동일한 형태로 반환)
 """
-def prepro_tag_length(filename):
+def read_probe(filename):
     # tag_length들의 합을 계산한다.
     dummy = []
     with open(filename, "r", encoding="UTF-8") as f:
         rdr = csv.reader(f)
         next(rdr)
         for line in rdr:
-            sum_tag_length = sum(list(map(lambda x: x if type(x)==int else int(x,16),line[9:])))  # tag length들의 합을 계산하여 저장
-            dummy_line = line[:9]  # column 0~8 필드를 임시 저장
-            dummy_line.append(sum_tag_length)  # 임시저장 리스트에 tag_length들의 합계 추가
-            dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
+            try:
+                dummy_line = line[:9]  # column 0~8 필드를 임시 저장
+                dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
+            except:
+                continue
 
 
     name = ["wlan.sa","frame.time_relative","wlan.seq", "wlan.ssid", "frame.len", "wlan.ht.ampduparam.mpdudensity",
-            "wlan.ht.capabilities", "wlan.ht.capabilities.rxstbc", "wlan.ht.capabilities.txstbc",
-            "wlan.tag.length"]
+            "wlan.ht.capabilities", "wlan.ht.capabilities.rxstbc", "wlan.ht.capabilities.txstbc"]
     data = pd.DataFrame(dummy, columns=name)  # convert list to dataframe
     
     return data
 
-"""probe.csv들을 하나로 합침
-
-params
-filename : .csv 파일 경로
-
-return
-data : DataFrame type
-"""
-def read_probe(file_list):
-    df_list = []    # dataFrame list
-
-    # probe.csv 파일들을 리스트에 추가
-    for file in file_list:
-        df = pd.read_csv(file, error_bad_lines=False).fillna("")
-        df_list.append(df)
-        
-    # probe.csv 데이터들을 하나로 합쳐서 반환
-    return pd.concat(df_list)
-
-    
-    
 """시퀀스 번호 전처리 및 time별 분류저장
 params
 path : packet/probe/dev1/
@@ -494,14 +472,17 @@ def linear_regression(dt, ds):
             print("raise nan")
             continue
         print(step, W_val, cost_val)
-        pattern.append(W_val[0])
+        if W_val[0]>=100:
+            pattern.append(" ")
+        else:
+            pattern.append(W_val[0])
         pred.append(W_val*ds[i] + b_val)
         costt.append(tempcost)
 
     #delta seq no 평균을 구한다.
-    print("Delta Seq No : {}".format(np.mean(pattern)))
+    #print("Delta Seq No : {}".format(np.mean(pattern)))
     
-    return pattern, np.mean(pattern)
+    return pattern
 
 
 

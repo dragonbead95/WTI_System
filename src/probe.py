@@ -1,23 +1,32 @@
+"""
+title : probe request frame 관련 모듈
+author : 김용환
+date : 2020-11-29
+"""
+
 import pandas as pd
 import os
 import time
 import filePath
 import tensorflow.compat.v1 as tf
 import collect
-import prePro
 import math
 import numpy as np
 import csv
 import file
 import machine_learn
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
 from sklearn.preprocessing import MinMaxScaler
 
-"""label 저장
-생성한 label을 csv파일에 저장한다.
+"""save_label
+detail : label 저장, 생성한 label을 csv파일에 저장한다.
+
+params
 dev : dev1, dev2, ...
+
 """
 def save_label(dev,flag):
     num = dev.split("dev")
@@ -29,11 +38,14 @@ def save_label(dev,flag):
         flag = True
 
     return flag
-"""새로운 label 생성
-csv파일을 참조하여 제일 큰 숫자에 +1을 하여 새로운 label 생성하고,
-+1한 숫자는 다시 csv파일에 저장한다
 
-return new_label (type : str)
+"""create_label
+detail : 새로운 label 생성
+         csv파일을 참조하여 제일 큰 숫자에 +1을 하여 새로운 label 생성하고,
+         +1한 숫자는 다시 csv파일에 저장한다
+
+return 
+new_label (type : str)
 """
 def create_label(flag):
     with open(filePath.label_path,"r") as f:
@@ -48,7 +60,11 @@ def create_label(flag):
     
     return new_label
 
-"""식별모델 학습
+"""train_model
+detail : 식별모델 학습
+
+params
+data : feature dataframe
 """
 def train_model(data):
     x_train = data[["delta_seq_no","wlan.ht.ampduparam.mpdudensity","wlan.ht.capabilities",
@@ -66,16 +82,12 @@ def train_model(data):
 
     machine_learn.save_model(rf,"device_model.pkl") # 식별모델 파일 저장
 
-    
 
-        
-
-
-"""feature 가져오기
-기계학습 모델에 넣기 위해 저장된 feature 들을 가져오는 기능
+"""get_features
+detail : 기계학습 모델에 학습하기 위해 저장된 feature 들을 가져와 학습 데이터를 생성한다.
 """
 def get_features():
-    # 필요한 것 : 기기별로 저장된 featured.csv 경로
+    
     os.system("sudo find {} -name featured.csv > \
                 {}".format(filePath.probe_path, filePath.feature_path_list_path))
 
@@ -94,15 +106,13 @@ def get_features():
                     "wlan.ht.capabilities.rxstbc","wlan.ht.capabilities.txstbc",
                     "length","label"]]
                 )
+
     #step3 feature 데이터 합치기
     return pd.concat(datas) # type:dataframe
         
     
-        
-    
-
-"""ap식별
-조건 : 식별 모델이 존재하면 모델에 넣어 식별 수행
+"""identify_ap
+detail : 무선 단말 식별, 식별 모델이 존재하면 모델에 넣어 식별 수행
 """
 def identify_ap(data):
     
@@ -118,43 +128,63 @@ def identify_ap(data):
     proba_dev = device_model.predict_proba(x_test)# 식별 예측 확률
     
     for pred, proba, y_test in zip(predict_dev,proba_dev,y_tests):
-        if max(proba) > 0.6:
+        if max(proba) > 0.6: # 인가 단말
             print("pred : {}, proba : {}, real : {} is authorized".format(pred,max(proba),y_test))
-        else:
+        else:                # 비인가 단말
             print("pred : {}, proba : {}, real : {} is unauthorized".format(pred,max(proba),y_test))
             
     print(pd.crosstab(y_tests,predict_dev))
     print(classification_report(y_tests,predict_dev))
 
-"""probe-request 가공
-probe-request를 전처리 및 학습 모델 생성
+"""read_probe
+detail: filename에 해당하는 csv파일을 불러온다.
+
+return
+data : dataframe type
+"""
+def read_probe(filename):
+    dummy = []
+    with open(filename, "r", encoding="UTF-8") as f:
+        rdr = csv.reader(f)
+        next(rdr)
+        for line in rdr:
+            try:
+                dummy_line = line[:8] 
+                dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
+            except:
+                continue
+
+
+    name = ["frame.time_relative","wlan.seq", "wlan.ssid", "frame.len", "wlan.ht.ampduparam.mpdudensity",
+            "wlan.ht.capabilities", "wlan.ht.capabilities.rxstbc", "wlan.ht.capabilities.txstbc"]
+    data = pd.DataFrame(dummy, columns=name)  # convert list to dataframe
+    
+    return data
+
+"""proREq_process
+detail : probe-request를 전처리 및 학습 모델 생성
 """
 def proReq_process():
 
     # step1 단말 분류
-    data = read_probe(filePath.learn_csv_probe_path) # tag length 필드 전처리
+    data = read_probe(filePath.learn_csv_probe_path)
 
-    data = make_nullProReq(data)                            # null probe request 생성, length 필드 생성
+    data = make_nullProReq(data)                     # null probe request 생성, length 필드 생성
 
-    macs = ["84:2e:27:6b:53:df","00:f4:6f:9e:c6:eb","94:d7:71:fc:67:c9","18:83:31:9b:75:ad"]
-    data = data[(data["wlan.sa"]==macs[0]) | (data["wlan.sa"]==macs[1]) | (data["wlan.sa"]==macs[2]) | (data["wlan.sa"]==macs[3])]
+    dfs = separate_probe(data)                       # probe request를 단말별로 분류
 
-    dfs = separate_probe(data)                              # probe request를 단말별로 분류
+    file.make_Directory(filePath.probe_path)         # probe 디렉토리 생성
 
-    file.make_Directory(filePath.probe_path)                      # probe 디렉토리 생성
-
-    dev_path ,devs = save_separated_probe(dfs,filePath.probe_path)# 분류된 단말들을 csv 파일 형태로 each 저장
+    dev_path ,devs = save_separated_probe(dfs,filePath.probe_path) # 분류된 단말들을 csv 파일 형태로 each 저장
 
     for path, dev in zip(dev_path, devs): # path : ex) probe/dev1/
         # step2 단말 시퀀스 번호 전처리
         time_path = path+"time_separated/"
-        file.make_Directory(time_path) # time_separated 디렉토리 생성
+        file.make_Directory(time_path)
         time_names = separate_time_probe(path,dev, time_path)
 
-        # timediffderence field 추가후 저장
-
         # step3 feature 추출 및 저장
-        featured_path = path+"featured/" # featured 디렉토리 생성
+        featured_path = path+"featured/"
         file.make_Directory(featured_path)
         write_feature(time_names,dev,featured_path)
 
@@ -176,13 +206,14 @@ def proReq_process():
     정답데이터 ds(wlan.seq)에 회귀분석한 기울기이다.
 """
 def write_feature(time_names,dev,featured_path):   
-    dt = [] # delta time
-    ds = [] # delta seq
+    dt = []
+    ds = []
     mp = []
     cap = []
     cap_rx = []
     cap_tx = []
     leng = []
+
     for filename in time_names:
         # step3-1 dt, ds 추출
         data = pd.read_csv(filename)
@@ -198,10 +229,9 @@ def write_feature(time_names,dev,featured_path):
             
             
     # step3-3 delta seq no 추출
-    #delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
+    # delta_seq_nos, delta_seq_no_avg = linear_regression(dt,ds)
     delta_seq_nos = linear_regression(dt,ds)
 
-    
     # step3-4 학습 dataframe 생성
     new_data = pd.DataFrame({"delta_seq_no":delta_seq_nos,
                         "wlan.ht.ampduparam.mpdudensity":mp,
@@ -217,13 +247,14 @@ def write_feature(time_names,dev,featured_path):
     # step3-6 label 생성
     labels = []
     model = machine_learn.load_model("device_model.pkl") 
-    if not model: # model이 존재하지 않을때
-        if len(new_data)>=1: # new_data 데이터프레임에 feature가 존재할때
+    if not model:
+        if len(new_data)>=1:
+            # 식별 모델(model)이 존재하지 않을시 1~N으로 순차 할당한다
             for idx in range(len(new_data)):
                 labels.append(dev)
             save_label(dev,False) # 생성한 레이블 번호를 파일에 저장
         
-    else:         # model 존재할때
+    else:
         flag = False # 새로운 레이블 번호가 필요시, 계속된 레이블 번호 추가를 막기 위한 플래그 변수
         for i in range(len(new_data)):
             x_data = np.reshape(new_data.iloc[i].values.tolist(),(1,-1)) # 1d -> 2d
@@ -231,10 +262,9 @@ def write_feature(time_names,dev,featured_path):
             label_pred = model.predict(x_data)[0] # 기존에 식별된 단말인지 식별
             label_proba = max(model.predict_proba(x_data)[0]) # 예측 확률 판단
 
-            if label_proba>0.6:
+            if label_proba>0.6: # 기존 학습한 단말 판단
                 labels.append(label_pred)
-            else: # 새로운 번호가 필요
-                print("pred : {}, proba : {}".format(label_pred,label_proba))
+            else: # 새로운 단말 판단
                 new_label= create_label(flag)
                 labels.append("dev{}".format(new_label))
                 flag = save_label("dev{}".format(new_label),flag)
@@ -245,13 +275,13 @@ def write_feature(time_names,dev,featured_path):
     # step3-7 featured.csv 작성
     new_data.to_csv(featured_path+"featured.csv",sep=',', na_rep='', index=False)
 
-"""분류된 probe request 데이터들을 csv파일로 저장
-1.dfs안에는 dataframe 타입의 each 분류된 단말 probe request 데이터 리스트로 저장됨
+"""save_separated_probe
+detail : 분류된 probe request 데이터들을 csv파일로 저장
+1. dfs안에는 dataframe 타입의 each 분류된 단말 probe request 데이터 리스트로 저장됨
 2. csv 파일들은 1~N까지 1.csv ..., N.csv 형태로 저장
 
 param
 dfs : dataframe 타입의 분류된 probe request 데이터들
-
 
 return
 paths : [probe/dev1/, probe/dev2/, ..., probe/devn/]
@@ -263,19 +293,21 @@ def save_separated_probe(dfs,savepath):
     devs = []
     for df in dfs:
         if len(df) >= 100:  # probe request data가 100개 이상 수집된 단말만 분류 csv 파일 생성
-            path = savepath+"dev{}/".format(filename) # 저장 디렉토리
-            dev_name = "dev{}".format(filename)   # dev1.csv
+            path = savepath+"dev{}/".format(filename)
+            dev_name = "dev{}".format(filename)       # dev1.csv
             
             devs.append(dev_name)                     # [dev1.csv, dev2.csv, ..., devn.csv]
             paths.append(path)                        # dev 저장 디렉토리 경로 저장
             
             file.make_Directory(path)                 # 단말 디렉토리 생성
-            df.to_csv(path+dev_name+".csv", sep=',', na_rep='', index=False) # csv 파일 생성
+            df.to_csv(path+dev_name+".csv", sep=',', na_rep='', index=False)
             filename += 1
 
     return paths, devs
 
-""" probe request 데이터모음을 단말별로 분류할 기준 생성
+""" separate_probe
+detail : probe request 데이터모음을 단말별로 분류할 기준 생성
+
 분류 기준
 wlan.ht.ampduparam.mpdudensity
 wlan.ht.capabilities
@@ -303,7 +335,6 @@ def separate_probe(data):
     for name, group in grouped:
         stand.append(name)
 
-
     # 분류 기준 딕셔너리
     filter_obj = {
         "wlan.ht.ampduparam.mpdudensity": "wlan.ht.ampduparam.mpdudensity",
@@ -324,9 +355,17 @@ def separate_probe(data):
 
     return dfs
 
-""" null probe request 필드 생성
+""" make_nullProReq
+detail : null probe request 필드 생성
+
 length = frame.len - wlan.ssid의 길이
 dataframe에 length 필드 추가
+
+params
+data : probe request dataframe
+
+return
+data : probe request dataframe(length 필드 추가)
 """
 def make_nullProReq(data):
     leng = []
@@ -338,43 +377,9 @@ def make_nullProReq(data):
     data["length"] = leng_df  # length 필드 생성
     return data
 
-""" tag_length 합계 계산
-tag length 필드 필터링 시 -> 0, 8, 4, 8, ..., 16
-위와 동일한 형태로 csv파일에 저장
-문제는 seperator="," 이기 때문에 필드 열이 맞지가 않고
-지문으로 사용할 tag_length들의 합계를 전처리하여 새로운 dataframe 타입 생성 필요
+"""separate_time_probe
+detail : 시퀀스 번호 전처리 및 time별(10분) 분류저장
 
-기존
-frame.time_relative,wlan.seq,wlan.ssid,frame.len,wlan.ht.ampduparam.mpdudensity,wlan.ht.capabilities,wlan.ht.capabilities.rxstbc,wlan.ht.capabilities.txstbc,wlan.tag.length
-4.261908020,422,,159,0x00000005,0x0000002d,0x00000000,0,0,4,8,1,26,8,1,5,19,8,9
-
-변경
-frame.time_relative,wlan.seq,wlan.ssid,frame.len,wlan.ht.ampduparam.mpdudensity,wlan.ht.capabilities,wlan.ht.capabilities.rxstbc,wlan.ht.capabilities.txstbc,wlan.tag.length
-4.261908020,422,,159,0x00000005,0x0000002d,0x00000000,89
-
-return data (type:dataframe,변경된 형식과 동일한 형태로 반환)
-"""
-def read_probe(filename):
-    # tag_length들의 합을 계산한다.
-    dummy = []
-    with open(filename, "r", encoding="UTF-8") as f:
-        rdr = csv.reader(f)
-        next(rdr)
-        for line in rdr:
-            try:
-                dummy_line = line[:9]  # column 0~8 필드를 임시 저장
-                dummy.append(dummy_line)  # 새로 생성한 데이터 row 추가
-            except:
-                continue
-
-
-    name = ["wlan.sa","frame.time_relative","wlan.seq", "wlan.ssid", "frame.len", "wlan.ht.ampduparam.mpdudensity",
-            "wlan.ht.capabilities", "wlan.ht.capabilities.rxstbc", "wlan.ht.capabilities.txstbc"]
-    data = pd.DataFrame(dummy, columns=name)  # convert list to dataframe
-    
-    return data
-
-"""시퀀스 번호 전처리 및 time별 분류저장
 params
 path : packet/probe/dev1/
 dev : dev1.csv
@@ -440,6 +445,9 @@ def separate_time_probe(path, dev, time_path):
 
     return time_separated_names
 
+"""linear_regression
+detail : 수신time(dt) 대비 시퀀스 번호의 1차 직선 기울기를 구한다.
+"""
 def linear_regression(dt, ds):
     tf.disable_v2_behavior()
 
@@ -478,13 +486,8 @@ def linear_regression(dt, ds):
             pattern.append(W_val[0])
         pred.append(W_val*ds[i] + b_val)
         costt.append(tempcost)
-
-    #delta seq no 평균을 구한다.
-    #print("Delta Seq No : {}".format(np.mean(pattern)))
     
     return pattern
 
-
-
 if __name__ == "__main__":
-    save_label("dev10")
+    pass
